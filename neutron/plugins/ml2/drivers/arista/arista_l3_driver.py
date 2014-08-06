@@ -25,75 +25,65 @@ from oslo.config import cfg
 from neutron import context as nctx
 from neutron.db import db_base_plugin_v2
 from neutron.openstack.common import log as logging
-from neutron.plugins.ml2 import db as ml2_db
+#from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2.drivers.arista import exceptions as arista_exc
 
 LOG = logging.getLogger(__name__)
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 
-router_in_vrf =  {
-   'router'    : {'create'  : ['vrf definition {0}',
-                               'rd {1}',
-                               'exit'],
-                  'delete'  : ['no vrf definition {0}'],
-                 },
-   'interface' : {'add'     : ['ip routing vrf {1}',
-                               'vlan {0}',
-                               'exit',
-                               'interface vlan {0}',
-                               'vrf forwarding {1}',
-                               'ip address {2}'],
-                  'remove'  : ['no interface vlan {0}'],
-                 }
-            }
+router_in_vrf = {
+    'router': {'create': ['vrf definition {0}',
+                          'rd {1}',
+                          'exit'],
+               'delete': ['no vrf definition {0}']},
 
-router_in_default_vrf =  {
-   'router'    : {'create'  : [],
-                  'delete'  : ['no ip routing',
-                               'no ipv6 unicast-routing'],
-                 },
-   'interface' : {'add'     : ['ip routing',
-                               'vlan {0}',
-                               'exit',
-                               'interface vlan {0}',
-                               'ip address {2}'],
-                  'remove'  : ['no interface vlan {0}'],
-                 }
-            }
+    'interface': {'add': ['ip routing vrf {1}',
+                          'vlan {0}',
+                          'exit',
+                          'interface vlan {0}',
+                          'vrf forwarding {1}',
+                          'ip address {2}'],
+                  'remove': ['no interface vlan {0}']}}
 
-router_in_default_vrf_v6 =  {
-   'router'    : {'create'  : [],
-                  'delete'  : ['no ip routing',
-                               'no ipv6 unicast-routing'],
-                 },
-   'interface' : {'add'     : ['ipv6 unicast-routing',
-                               'vlan {0}',
-                               'exit',
-                               'interface vlan {0}',
-                               'ipv6 enable',
-                               'ipv6 address {2}'],
-                  'remove'  : ['no interface vlan {0}'],
-                 }
-            }
+router_in_default_vrf = {
+    'router': {'create': [],
+               'delete': ['no ip routing',
+                          'no ipv6 unicast-routing']},
 
-additional_cmds_for_mlag =  {
-   'router'    : {'create'  : ['ip virtual-router mac-address {0}'],
-                  'delete'  : ['no ip virtual-router mac-address'],
-                 },
-   'interface' : {'add'     : ['ip virtual-router address {0}'],
-                  'remove'  : [],
-                 }
-            }
+    'interface': {'add': ['ip routing',
+                          'vlan {0}',
+                          'exit',
+                          'interface vlan {0}',
+                          'ip address {2}'],
+                  'remove': ['no interface vlan {0}']}}
 
-additional_cmds_for_mlag_v6 =  {
-   'router'    : {'create'  : [],
-                  'delete'  : [],
-                 },
-   'interface' : {'add'     : ['ipv6 virtual-router address {0}'],
-                  'remove'  : [],
-                 }
-            }
+router_in_default_vrf_v6 = {
+    'router': {'create': [],
+               'delete': ['no ip routing',
+                          'no ipv6 unicast-routing']},
+
+    'interface': {'add': ['ipv6 unicast-routing',
+                          'vlan {0}',
+                          'exit',
+                          'interface vlan {0}',
+                          'ipv6 enable',
+                          'ipv6 address {2}'],
+                  'remove': ['no interface vlan {0}']}}
+
+additional_cmds_for_mlag = {
+    'router': {'create': ['ip virtual-router mac-address {0}'],
+               'delete': ['no ip virtual-router mac-address']},
+
+    'interface': {'add': ['ip virtual-router address {0}'],
+                  'remove': []}}
+
+additional_cmds_for_mlag_v6 = {
+    'router': {'create': [],
+               'delete': []},
+
+    'interface': {'add': ['ipv6 virtual-router address {0}'],
+                  'remove': []}}
 
 
 class AristaL3Driver(object):
@@ -139,7 +129,7 @@ class AristaL3Driver(object):
             return None
         user = cfg.CONF.l3_arista.primary_l3_host_username
         pwd = cfg.CONF.l3_arista.primary_l3_host_password
-        host = cfg.CONF.l3_arista.seconadry_l3_host
+        host = cfg.CONF.l3_arista.secondary_l3_host
         self._hosts.append(host)
 
         eapi_mlag_server_url = ('https://%s:%s@%s/command-api' %
@@ -152,13 +142,13 @@ class AristaL3Driver(object):
             LOG.error(msg)
             raise arista_exc.AristaSevicePluginConfigError(msg=msg)
         if cfg.CONF.l3_arista.get('mlag_config'):
-            #if cfg.CONF.arista.get('use_vrf'):
-            #    #This is invalid/unsupported configuration
-            #    msg = _('VRF does not support MLAG mode')
-            #    LOG.error(msg)
-            #    raise arista_exc.AristaSevicePluginConfigError(msg=msg)
-            if cfg.CONF.l3_arista.get('seconadry_l3_host') == '':
-                msg = _('Required option seconadry_l3_host is not set')
+            if cfg.CONF.l3_arista.get('use_vrf'):
+                #This is invalid/unsupported configuration
+                msg = _('VRFs are not supported MLAG config mode')
+                LOG.error(msg)
+                raise arista_exc.AristaSevicePluginConfigError(msg=msg)
+            if cfg.CONF.l3_arista.get('secondary_l3_host') == '':
+                msg = _('Required option secondary_l3_host is not set')
                 LOG.error(msg)
                 raise arista_exc.AristaSevicePluginConfigError(msg=msg)
         if cfg.CONF.l3_arista.get('primary_l3_host_username') == '':
@@ -169,10 +159,11 @@ class AristaL3Driver(object):
     def create_router_on_eos(self, router_name, rdm, server):
         """Creates a router on Arista HW Device.
 
-        :param router_name: globally unique identifier for router/VRF 
-        :param RD: A random value between 1 and 10 to create rd for VRF
+        :param router_name: globally unique identifier for router/VRF
+        :param rdm: A random value between 1 and 10 to create rd for VRF
+        :param server: Server endpoint on the Arista swtich to be configured
         """
-        cmds=[]
+        cmds = []
         rd = "%s:%s" % (rdm, rdm)
 
         for c in self.routerDict['create']:
@@ -182,15 +173,16 @@ class AristaL3Driver(object):
             mac = '02:1c:73:00:42:e9'
             for c in self._additionalRouterCmdsDict['create']:
                 cmds.append(c.format(mac))
-          
+
         self._run_openstack_l3_cmds(cmds, server)
 
     def delete_router_from_eos(self, router_name, server):
         """Deletes a router from Arista HW Device.
 
-        :param router_name: globally unique identifier for router/VRF 
+        :param router_name: globally unique identifier for router/VRF
+        :param server: Server endpoint on the Arista swtich to be configured
         """
-        cmds=[]
+        cmds = []
         for c in self.routerDict['delete']:
             cmds.append(c.format(router_name))
         if self.mlag_configured:
@@ -218,13 +210,16 @@ class AristaL3Driver(object):
         """Adds an interface to existing HW router on Arista HW device.
 
         :param segment_id: VLAN Id associated with interface that is added
-        :param router_name: globally unique identifier for router/VRF 
-        :param cidr: CIDR associated the sub-interface being added 
+        :param router_name: globally unique identifier for router/VRF
+        :param gip: Gateway IP associated with the subnet
+        :param router_ip: IP address of the router
+        :param mask: subnet mask to be used
+        :param server: Server endpoint on the Arista swtich to be configured
         """
 
         if not segment_id:
             segment_id = 1
-        cmds=[]
+        cmds = []
         for c in self.interfaceDict['add']:
             if self.mlag_configured:
                 ip = router_ip
@@ -233,22 +228,21 @@ class AristaL3Driver(object):
             cmds.append(c.format(segment_id, router_name, ip))
         if self.mlag_configured:
             for c in self._additionalInterfaceCmdsDict['add']:
-                #vip = ".".join(cidr.split( '/' ) [0 ].split('.')[ 0:3]) + '.1'
                 cmds.append(c.format(gip))
 
-        #pdb.set_trace()
         self._run_openstack_l3_cmds(cmds, server)
 
     def delete_interface_from_router(self, segment_id, router_name, server):
         """Deltes an interface from existing HW router on Arista HW device.
 
         :param segment_id: VLAN Id associated with interface that is added
-        :param router_name: globally unique identifier for router/VRF 
+        :param router_name: globally unique identifier for router/VRF
+        :param server: Server endpoint on the Arista swtich to be configured
         """
 
         if not segment_id:
             segment_id = 1
-        cmds=[]
+        cmds = []
         for c in self.interfaceDict['remove']:
             cmds.append(c.format(segment_id))
 
@@ -257,41 +251,43 @@ class AristaL3Driver(object):
     def create_router(self, context, tenant_id, router):
         """Creates A router on Arista Switch.
 
+        Deals with multiple configurations - such as Router per VRF,
+        a router in default VRF, Virtual Router in MLAG configurations
         """
         if router:
-            rdm =str(int(hashlib.sha256(router['name']).hexdigest(),16) % 6553)
+            rdm = str(int(hashlib.sha256(router['name']).hexdigest(),
+                    16) % 6553)
             for s in self._servers:
                 self.create_router_on_eos(router['name'], rdm, s)
 
     def delete_router(self, context, tenant_id, router_id, router):
-        """Deleted A router from Arista Switch.
+        """Deleted A router from Arista Switch """
 
-        """
         if router:
             for s in self._servers:
                 self.delete_router_from_eos(router['name'], s)
 
-
     def update_router(self, context, router_id, original_router, new_router):
         """Update A router which is already created on Arista Switch.
 
+        TODO: (Sukhdev) - to be implemented in next release.
         """
         pass
 
     def add_router_interface(self, context, router_info):
         """Adds an interface to a router created on Arista HW router.
 
+        This deals with both IPv6 and IPv4 configurations
         """
         if router_info:
             self._select_dicts(router_info['ip_version'])
             cidr = router_info['cidr']
             subnet_mask = cidr.split('/')[1]
-            #virtualIp = ".".join(cidr.split( '/' ) [0 ].split('.')[ 0:3]) 
-            if self.mlag_configured: 
+            #virtualIp = ".".join(cidr.split( '/' ) [0 ].split('.')[ 0:3])
+            if self.mlag_configured:
                 # For MLAG, we send a specific IP address as opposed to cidr
                 # For now, we are using x.x.x.253 and x.x.x.254 as virtual IP
                 for i in range(len(self._servers)):
-                    #vip = virtualIp + '.' +  str (254 - i) + '/' + cidr.split('/')[1]
                     router_ip = self._get_router_ip(cidr, i,
                                                     router_info['ip_version'])
                     self.add_interface_to_router(router_info['seg_id'],
@@ -299,13 +295,13 @@ class AristaL3Driver(object):
                                                  router_info['gip'],
                                                  router_ip, subnet_mask,
                                                  self._servers[i])
-                  
+
             else:
                 for s in self._servers:
-                   self.add_interface_to_router(router_info['seg_id'],
-                                                router_info['name'],
-                                                router_info['gip'],
-                                                None, subnet_mask, s)
+                    self.add_interface_to_router(router_info['seg_id'],
+                                                 router_info['name'],
+                                                 router_info['gip'],
+                                                 None, subnet_mask, s)
 
     def remove_router_interface(self, context, router_info):
         """Removes previously configured interface from router on Arista HW.
@@ -334,7 +330,7 @@ class AristaL3Driver(object):
             # this returns array of return values for every command in
             # full_command list
             ret = server.runCmds(version=1, cmds=full_command)
-            print ret
+            LOG.info(_('Results of execution on Arista EOS: %s'), ret)
 
         except Exception as error:
             msg = (_('Error %(err)s while trying to execute '
@@ -343,84 +339,62 @@ class AristaL3Driver(object):
             LOG.exception(msg)
             raise arista_exc.AristaServicePluginRpcError(msg=msg)
 
-#    def _get_binary_from_ip(self, ip_addr, ip_ver):
-#       seperator = '.'
-#       size = 8
-#       num_octets = 4
-#       if ip_ver == 6:
-#           seperator = ':'
-#           size = 16
-#           num_octets = 8
-#       octets = ip_addr.split(seperator)
-#       num = 0
-#       given_octets = len(octets)
-#       convert_octets = num_octets - given_octets
-#       for i in range( len(octets)):
-#          if octets[i] == '':
-#              for c in range(len(convert_octets+1):
-#                  num = num | 0
-#                  num = num << size
-#              break
-#          num = num | int( octets[ i ] )
-#          num = num << size
-#       return num
-    
     def _get_binary_from_ipv4(self, ip_addr):
-        octets = ip_addr.split( '.' )
+        octets = ip_addr.split('.')
         num = 0
-        for i in range( len( octets ) - 1 ):
-           num = num | int( octets[ i ] )
-           num = num << 8
+        for i in range(len(octets) - 1):
+            num = num | int(octets[i])
+            num = num << 8
         return num
-    
+
     def _get_binary_from_ipv6(self, ip_addr):
-        octets = ip_addr.split( ':' )
+        octets = ip_addr.split(':')
         num = 0
-        for i in range( len( octets ) - 1 ):
-           if octets[ i ] != '':
-              num = num | int(octets[ i ], 16)
-              num = num << 16
-           else:
-              num = num << (7 - i) * 16
-              break
+        for i in range(len(octets) - 1):
+            if octets[i] != '':
+                num = num | int(octets[i], 16)
+                num = num << 16
+            else:
+                num = num << (7 - i) * 16
+                break
         return num
 
     def _get_ipv4_from_binary(self, bin_addr):
-       octets = []
-       for i in range( 4 ):
-          octets.append( str( bin_addr % 256 ) )
-          bin_addr = bin_addr / 256
-       return '.'.join( reversed( octets ) )
-    
+        octets = []
+        for i in range(4):
+            octets.append(str(bin_addr % 256))
+            bin_addr = bin_addr / 256
+        return '.'.join(reversed(octets))
+
     def _get_ipv6_from_binary(self, bin_addr):
         octets = []
-        for i in range( 8 ):
-           octets.append( '%x' % ( bin_addr % 65536 ) )
-           bin_addr = bin_addr / 65536
-        return ':'.join( reversed( octets ) )
-    
+        for i in range(8):
+            octets.append('%x' % (bin_addr % 65536))
+            bin_addr = bin_addr / 65536
+        return ':'.join(reversed(octets))
+
     def _get_router_ip(self, cidr, ip_count, ip_ver):
         start_ip = 2 + ip_count
-        network_addr, prefix = cidr.split( '/' )
+        network_addr, prefix = cidr.split('/')
         if ip_ver == 4:
             ip = self._get_binary_from_ipv4(network_addr)
-            mask = (pow(2,32) - 1) << ( 32 - int(prefix))
+            mask = (pow(2, 32) - 1) << (32 - int(prefix))
         elif ip_ver == 6:
             ip = self._get_binary_from_ipv6(network_addr)
-            mask = (pow(2,128) - 1) << ( 128 - int(prefix))
-    
+            mask = (pow(2, 128) - 1) << (128 - int(prefix))
+
         network_addr = ip & mask
-    
+
         if ip_ver == 4:
-           router_ip = pow(2, 32 - int(prefix)) - start_ip
+            router_ip = pow(2, 32 - int(prefix)) - start_ip
         elif ip_ver == 6:
-           router_ip = pow(2, 128 - int(prefix)) - start_ip
-    
+            router_ip = pow(2, 128 - int(prefix)) - start_ip
+
         router_ip = network_addr | router_ip
         if ip_ver == 4:
-           return self._get_ipv4_from_binary(router_ip) + '/' + prefix
+            return self._get_ipv4_from_binary(router_ip) + '/' + prefix
         else:
-           return self._get_ipv6_from_binary(router_ip) + '/' + prefix
+            return self._get_ipv6_from_binary(router_ip) + '/' + prefix
 
 
 class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2):
@@ -490,4 +464,3 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2):
     def get_port(self, port_id):
         return super(NeutronNets,
                      self).get_port(self.admin_ctx, port_id) or []
-

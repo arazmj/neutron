@@ -193,7 +193,7 @@ class RpcCallbacks(n_rpc.RpcCallback,
         if l3plugin:
             try:
                 l3plugin.dvr_vmarp_table_update(rpc_context, port_id, "add")
-            except:
+            except Exception:
                 #function is not supported by the plugin
                 pass
 
