@@ -18,13 +18,14 @@
 #
 
 import threading
+
 from oslo.config import cfg
 
-from neutron import context as nctx
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.common import constants as q_const
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
+from neutron import context as nctx
 from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_agentschedulers_db
@@ -33,9 +34,9 @@ from neutron.db import l3_rpc_base
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
-from neutron.plugins.ml2.drivers.arista.arista_l3_driver import AristaL3Driver
-from neutron.plugins.ml2.drivers.arista.arista_l3_driver import NeutronNets
-from neutron.plugins.ml2.driver_context import NetworkContext
+from neutron.plugins.ml2.driver_context import NetworkContext  # noqa
+from neutron.plugins.ml2.drivers.arista.arista_l3_driver import AristaL3Driver  # noqa
+from neutron.plugins.ml2.drivers.arista.arista_l3_driver import NeutronNets  # noqa
 
 LOG = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
     """Implements L3 Router service plugin for Arista Hardware.
 
     Creates routers in Arista Hardware, managees them, adds/deletes interfaces
-    to the routes. 
+    to the routes.
     """
 
     supported_extension_aliases = ["router", "ext-gw-mode",
@@ -69,7 +70,6 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.sync_timeout = cfg.CONF.l3_arista.l3_sync_interval
         self.sync_lock = threading.Lock()
         self._synchronization_thread()
-
 
     def setup_rpc(self):
         # RPC support
@@ -88,7 +88,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def get_plugin_description(self):
         """returns string description of the plugin."""
         return ("Arista L3 Router Service Plugin for Arista Hardware "
-                "based routing" )
+                "based routing")
 
     def _synchronization_thread(self):
         with self.sync_lock:
@@ -158,7 +158,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """Delete an existing from Arista HW as well as from the DB"""
 
         LOG.debug(_("AristaL3ServicePlugin.delete_router() called, id=%s."),
-                     router_id)
+                  router_id)
 
         router = super(AristaL3ServicePlugin, self).get_router(context,
                                                                router_id)
@@ -169,12 +169,12 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.driver.delete_router(context, tenant_id, router_id, router)
         except Exception as e:
             LOG.error(_("Error deleting router on Arista HW "
-                        "router id=%s exception=%s") % (router,e))
+                        "router %(r)s exception=%(e)s") %
+                      {'r': router, 'e': e})
 
         with context.session.begin(subtransactions=True):
             super(AristaL3ServicePlugin, self).delete_router(context,
                                                              router_id)
-
 
     def add_router_interface(self, context, router_id, interface_info):
         """Add a subnet of a network to an existing router"""
@@ -182,12 +182,12 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_("AristaL3ServicePlugin.add_router_interface() called, "
                     "id=%(id)s, interface=%(interface)s."),
                   {'id': router_id, 'interface': interface_info})
-        
-        router_info =  super(AristaL3ServicePlugin, self).add_router_interface(
+
+        router_info = super(AristaL3ServicePlugin, self).add_router_interface(
             context, router_id, interface_info)
 
-        #Get network information for the subnet that is being added to the 
-        #router. 
+        #Get network information for the subnet that is being added to the
+        #router.
         #Check if the interface information is by port-id or subnet-id
         add_by_port, add_by_sub = self._validate_interface_info(interface_info)
         if add_by_sub:
@@ -197,28 +197,28 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             subnet_id = port['fixed_ips'][0]['subnet_id']
             subnet = self.get_subnet(context, subnet_id)
         network_id = subnet['network_id']
-            
+
         #To create SVI's in Arista HW, the segmentation Id is required
-        #for this network. 
-        ml2_db = NetworkContext(self, context, {'id' : network_id} )
+        #for this network.
+        ml2_db = NetworkContext(self, context, {'id': network_id})
         seg_id = ml2_db.network_segments[0]['segmentation_id']
 
         #Package all the info needed for Hw programming
         router = super(AristaL3ServicePlugin, self).get_router(context,
                                                                router_id)
-        router_info['seg_id'] =  seg_id
-        router_info['name'] =  router['name']
-        router_info['cidr'] =  subnet['cidr']
-        router_info['gip'] =  subnet['gateway_ip']
-        router_info['ip_version'] =  subnet['ip_version']
+        router_info['seg_id'] = seg_id
+        router_info['name'] = router['name']
+        router_info['cidr'] = subnet['cidr']
+        router_info['gip'] = subnet['gateway_ip']
+        router_info['ip_version'] = subnet['ip_version']
 
         try:
             self.driver.add_router_interface(context, router_info)
             return router_info
         except Exception:
             LOG.error(_("Error Adding interface %(subnet_id)s to "
-                        "router %(router_id)s on Arista HW") % 
-                         {'subnet_id': subnet_id, 'router_id':router_id})
+                        "router %(router_id)s on Arista HW") %
+                      {'subnet_id': subnet_id, 'router_id': router_id})
             with excutils.save_and_reraise_exception():
                 super(AristaL3ServicePlugin, self).remove_router_interface(
                                                     context,
@@ -232,22 +232,22 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     "id=%(id)s, interface=%(interface)s."),
                   {'id': router_id, 'interface': interface_info})
 
-
-        router_info = super(AristaL3ServicePlugin, self).remove_router_interface(
-            context, router_id, interface_info)
+        router_info = (
+                   super(AristaL3ServicePlugin, self).remove_router_interface(
+                         context, router_id, interface_info))
 
         #get network information of the subnet that is being removed
         subnet = self.get_subnet(context, router_info['subnet_id'])
         network_id = subnet['network_id']
 
         #For SVI removal from Arista HW, segmentation ID is needed
-        ml2_db = NetworkContext(self, context, {'id' : network_id} )
+        ml2_db = NetworkContext(self, context, {'id': network_id})
         seg_id = ml2_db.network_segments[0]['segmentation_id']
 
         router = super(AristaL3ServicePlugin, self).get_router(context,
                                                                router_id)
-        router_info['seg_id'] =  seg_id
-        router_info['name'] =  router['name']
+        router_info['seg_id'] = seg_id
+        router_info['name'] = router['name']
 
         try:
             self.driver.remove_router_interface(context, router_info)
@@ -256,32 +256,30 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             LOG.error(_("Error removing interface %(interface)s from "
                         "router %(router_id)s on Arista HW"
                         "Exception =(exc)s") % {'interface': interface_info,
-                                                'router_id':router_id
-                                                'e': exc})
+                                                'router_id': router_id,
+                                                'exc': exc})
 
     def synchronize(self):
         """Syncronizes Router DB from Neturon DB with EOS.
 
         Walks through the Neturon Db and ensures that all the routers
         created in Netuton DB match with EOS. After creating appropriate
-        routers, it ensures to add interfaces as well. 
+        routers, it ensures to add interfaces as well.
         uses idompotent properties of EOS configuration, which means
-        same commands can be repeated. 
+        same commands can be repeated.
         """
         LOG.info(_('Syncing Neutron Router DB <-> EOS'))
         ctx = nctx.get_admin_context()
 
         routers = super(AristaL3ServicePlugin, self).get_routers(ctx)
         for r in routers:
-            print r
             tenant_id = r['tenant_id']
-            ports =self.ndb.get_all_ports_for_tenant(tenant_id)
+            ports = self.ndb.get_all_ports_for_tenant(tenant_id)
 
             try:
                 self.driver.create_router(self, tenant_id, r)
-                
-            except Exception as e:
-                print e
+
+            except Exception:
                 continue
 
             "figure out which interfaces are added to this router"
@@ -290,31 +288,25 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     net_id = p['network_id']
                     subnet_id = p['fixed_ips'][0]['subnet_id']
                     subnet = self.ndb.get_subnet_info(subnet_id)
-                    ml2_db = NetworkContext(self, ctx, {'id' : net_id} )
+                    ml2_db = NetworkContext(self, ctx, {'id': net_id})
                     seg_id = ml2_db.network_segments[0]['segmentation_id']
 
-                    r['seg_id'] =  seg_id
-                    r['cidr'] =  subnet['cidr']
-                    r['gip'] =  subnet['gateway_ip']
-                    r['ip_version'] =  subnet['ip_version']
+                    r['seg_id'] = seg_id
+                    r['cidr'] = subnet['cidr']
+                    r['gip'] = subnet['gateway_ip']
+                    r['ip_version'] = subnet['ip_version']
 
                     try:
                         self.driver.add_router_interface(self, r)
-                    except Exception as e:
+                    except Exception:
                         LOG.error(_("Error Adding interface %(subnet_id)s to "
-                                    "router %(router_id)s on Arista HW") % 
-                                     {'subnet_id': subnet_id,
-                                      'router_id':router_id})
+                                    "router %(router_id)s on Arista HW") %
+                                  {'subnet_id': subnet_id,
+                                   'router_id': r})
 
     def _validate_interface_info(self, interface_info):
         port_id_specified = interface_info and 'port_id' in interface_info
         subnet_id_specified = interface_info and 'subnet_id' in interface_info
-        if not (port_id_specified or subnet_id_specified):
-            msg = _("Either subnet_id or port_id must be specified")
-            #raise n_exc.BadRequest(resource='router', msg=msg)
-        if port_id_specified and subnet_id_specified:
-            msg = _("Cannot specify both subnet-id and port-id")
-            #raise n_exc.BadRequest(resource='router', msg=msg)
         return port_id_specified, subnet_id_specified
 
 
@@ -335,6 +327,6 @@ class SyncService(extraroute_db.ExtraRoute_db_mixin):
 
     #    LOG.info(_('Syncing Neutron Router DB <-> EOS'))
     #    routers= self.get_routers(self.admin_ctx)
-    #    print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" 
+    #    print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
     #    print routers
     #    print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

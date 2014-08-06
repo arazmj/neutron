@@ -17,37 +17,33 @@
 #
 
 
-import pdb
 import mock
 from oslo.config import cfg
 
-import neutron.db.api as ndb
 from neutron.plugins.ml2.drivers.arista import arista_l3_driver as arista
 from neutron.tests import base
 
 
-def setup_arista_config(value=''):
-    cfg.CONF.set_override('primary_l3_host', value, "arista-pri")
-    cfg.CONF.set_override('primary_l3_username', value, "arista-pri")
+def setup_arista_config(value='', vrf=False, mlag=False):
+    cfg.CONF.set_override('primary_l3_host', value, "l3_arista")
+    cfg.CONF.set_override('primary_l3_host_username', value, "l3_arista")
+    if vrf:
+        cfg.CONF.set_override('use_vrf', value, "l3_arista")
+    if mlag:
+        cfg.CONF.set_override('secondary_l3_host', value, "l3_arista")
+        cfg.CONF.set_override('mlag_config', value, "l3_arista")
 
 
-def setup_valid_config():
-    # Config is not valid if value is not set
-    setup_arista_config('value')
-
-
-class AristaL3DriverTestCases(base.BaseTestCase):
+class AristaL3DriverTestCasesDefaultVrf(base.BaseTestCase):
     """Test cases to test the RPC between Arista Driver and EOS.
 
-    Tests all methods used to send commands between Arista Driver and EOS
+    Tests all methods used to send commands between Arista L3 Driver and EOS
+    to program routing functions in Default VRF
     """
 
-    pdb.set_trace()
-
     def setUp(self):
-        super(AristaL3DriverTestCases, self).setUp()
-        pdb.set_trace()
-        setup_valid_config()
+        super(AristaL3DriverTestCasesDefaultVrf, self).setUp()
+        setup_arista_config('value')
         self.drv = arista.AristaL3Driver()
         self.drv._servers = []
         self.drv._servers.append(mock.MagicMock())
@@ -59,9 +55,199 @@ class AristaL3DriverTestCases(base.BaseTestCase):
         router_name = 'test-router-1'
         route_domain = '123:123'
 
-        self.drv.create_router_on_eos(router_name, router_domain,
-                                        self.drv._servers[0])
-        cmds = []
+        self.drv.create_router_on_eos(router_name, route_domain,
+                                      self.drv._servers[0])
+        cmds = ['enable', 'configure', 'exit']
 
-        self.drv._servers[0].runCmds.assert_called_once_with(version=1, cmds=cmds)
+        self.drv._servers[0].runCmds.assert_called_once_with(version=1,
+                                                             cmds=cmds)
 
+    def test_delete_router_from_eos(self):
+        router_name = 'test-router-1'
+
+        self.drv.delete_router_from_eos(router_name, self.drv._servers[0])
+        cmds = ['enable', 'configure', 'no ip routing',
+                'no ipv6 unicast-routing', 'exit']
+
+        self.drv._servers[0].runCmds.assert_called_once_with(version=1,
+                                                             cmds=cmds)
+
+    def test_add_interface_to_router_on_eos(self):
+        router_name = 'test-router-1'
+        segment_id = '123'
+        router_ip = '10.10.10.10'
+        gw_ip = '10.10.10.1'
+        mask = '255.255.255.0'
+
+        self.drv.add_interface_to_router(segment_id, router_name, gw_ip,
+                                         router_ip, mask, self.drv._servers[0])
+        cmds = ['enable', 'configure', 'ip routing',
+                'vlan %s' % segment_id, 'exit',
+                'interface vlan %s' % segment_id,
+                'ip address %s/%s' % (gw_ip, mask), 'exit']
+
+        self.drv._servers[0].runCmds.assert_called_once_with(version=1,
+                                                             cmds=cmds)
+
+    def test_detele_interface_from_router_on_eos(self):
+        router_name = 'test-router-1'
+        segment_id = '123'
+
+        self.drv.delete_interface_from_router(segment_id, router_name,
+                                              self.drv._servers[0])
+        cmds = ['enable', 'configure', 'no interface vlan %s' % segment_id,
+                'exit']
+
+        self.drv._servers[0].runCmds.assert_called_once_with(version=1,
+                                                             cmds=cmds)
+
+
+class AristaL3DriverTestCasesUsingVRFs(base.BaseTestCase):
+    """Test cases to test the RPC between Arista Driver and EOS.
+
+    Tests all methods used to send commands between Arista L3 Driver and EOS
+    to program routing functions in using multiple VRFs.
+    Note that the configuration commands are different when VRFs are used.
+    """
+
+    def setUp(self):
+        super(AristaL3DriverTestCasesUsingVRFs, self).setUp()
+        setup_arista_config('value', vrf=True)
+        self.drv = arista.AristaL3Driver()
+        self.drv._servers = []
+        self.drv._servers.append(mock.MagicMock())
+
+    def test_no_exception_on_correct_configuration(self):
+        self.assertIsNotNone(self.drv)
+
+    def test_create_router_on_eos(self):
+        max_vrfs = 5
+        routers = ['testRouter-%s' % n for n in range(max_vrfs)]
+        domains = ['10%s' % n for n in range(max_vrfs)]
+
+        for (r, d) in zip(routers, domains):
+            self.drv.create_router_on_eos(r, d, self.drv._servers[0])
+
+            cmds = ['enable', 'configure',
+                    'vrf definition %s' % r,
+                    'rd %(rd)s:%(rd)s' % {'rd': d}, 'exit', 'exit']
+
+            self.drv._servers[0].runCmds.assert_called_with(version=1,
+                                                            cmds=cmds)
+
+    def test_delete_router_from_eos(self):
+        max_vrfs = 5
+        routers = ['testRouter-%s' % n for n in range(max_vrfs)]
+
+        for r in routers:
+            self.drv.delete_router_from_eos(r, self.drv._servers[0])
+            cmds = ['enable', 'configure', 'no vrf definition %s' % r,
+                    'exit']
+
+            self.drv._servers[0].runCmds.assert_called_with(version=1,
+                                                            cmds=cmds)
+
+    def test_add_interface_to_router_on_eos(self):
+        router_name = 'test-router-1'
+        segment_id = '123'
+        router_ip = '10.10.10.10'
+        gw_ip = '10.10.10.1'
+        mask = '255.255.255.0'
+
+        self.drv.add_interface_to_router(segment_id, router_name, gw_ip,
+                                         router_ip, mask, self.drv._servers[0])
+        cmds = ['enable', 'configure',
+                'ip routing vrf %s' % router_name,
+                'vlan %s' % segment_id, 'exit',
+                'interface vlan %s' % segment_id,
+                'vrf forwarding %s' % router_name,
+                'ip address %s/%s' % (gw_ip, mask), 'exit']
+
+        self.drv._servers[0].runCmds.assert_called_once_with(version=1,
+                                                             cmds=cmds)
+
+    def test_detele_interface_from_router_on_eos(self):
+        router_name = 'test-router-1'
+        segment_id = '123'
+
+        self.drv.delete_interface_from_router(segment_id, router_name,
+                                              self.drv._servers[0])
+        cmds = ['enable', 'configure', 'no interface vlan %s' % segment_id,
+                'exit']
+
+        self.drv._servers[0].runCmds.assert_called_once_with(version=1,
+                                                             cmds=cmds)
+
+
+class AristaL3DriverTestCasesMlagConfig(base.BaseTestCase):
+    """Test cases to test the RPC between Arista Driver and EOS.
+
+    Tests all methods used to send commands between Arista L3 Driver and EOS
+    to program routing functions in Default VRF using MLAG configuration.
+    MLAG configuration means that the commands will be sent to both
+    primary and secondary Arista Switches.
+    """
+
+    def setUp(self):
+        super(AristaL3DriverTestCasesMlagConfig, self).setUp()
+        setup_arista_config('value', mlag=True)
+        self.drv = arista.AristaL3Driver()
+        self.drv._servers = []
+        self.drv._servers.append(mock.MagicMock())
+        self.drv._servers.append(mock.MagicMock())
+
+    def test_no_exception_on_correct_configuration(self):
+        self.assertIsNotNone(self.drv)
+
+    def test_create_router_on_eos(self):
+        router_name = 'test-router-1'
+        route_domain = '123:123'
+        router_mac = '02:1c:73:00:42:e9'
+
+        for s in self.drv._servers:
+            self.drv.create_router_on_eos(router_name, route_domain, s)
+            cmds = ['enable', 'configure',
+                    'ip virtual-router mac-address %s' % router_mac, 'exit']
+
+            s.runCmds.assert_called_with(version=1, cmds=cmds)
+
+    def test_delete_router_from_eos(self):
+        router_name = 'test-router-1'
+
+        for s in self.drv._servers:
+            self.drv.delete_router_from_eos(router_name, s)
+            cmds = ['enable', 'configure', 'no ip routing',
+                    'no ipv6 unicast-routing',
+                    'no ip virtual-router mac-address', 'exit']
+
+            s.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_add_interface_to_router_on_eos(self):
+        router_name = 'test-router-1'
+        segment_id = '123'
+        router_ip = '10.10.10.10'
+        gw_ip = '10.10.10.1'
+        mask = '255.255.255.0'
+
+        for s in self.drv._servers:
+            self.drv.add_interface_to_router(segment_id, router_name, gw_ip,
+                                             router_ip, mask, s)
+            cmds = ['enable', 'configure', 'ip routing',
+                    'vlan %s' % segment_id, 'exit',
+                    'interface vlan %s' % segment_id,
+                    'ip address %s' % router_ip,
+                    'ip virtual-router address %s' % gw_ip, 'exit']
+
+            s.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_detele_interface_from_router_on_eos(self):
+        router_name = 'test-router-1'
+        segment_id = '123'
+
+        for s in self.drv._servers:
+            self.drv.delete_interface_from_router(segment_id, router_name, s)
+
+            cmds = ['enable', 'configure', 'no interface vlan %s' % segment_id,
+                    'exit']
+
+            s.runCmds.assert_called_once_with(version=1, cmds=cmds)
