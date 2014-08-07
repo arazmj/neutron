@@ -31,8 +31,11 @@ from neutron.plugins.ml2.drivers.arista import exceptions as arista_exc
 LOG = logging.getLogger(__name__)
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
+<<<<<<< HEAD
 DEFAULT_TEST_VLAN = 1
 VIRTUAL_ROUTER_MAC = '02:1c:73:00:42:e9'
+=======
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
 
 router_in_vrf = {
     'router': {'create': ['vrf definition {0}',
@@ -243,7 +246,11 @@ class AristaL3Driver(object):
         """
 
         if not segment_id:
+<<<<<<< HEAD
             segment_id = DEFAULT_TEST_VLAN
+=======
+            segment_id = 1
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
         cmds = []
         for c in self.interfaceDict['remove']:
             cmds.append(c.format(segment_id))
@@ -257,9 +264,13 @@ class AristaL3Driver(object):
         a router in default VRF, Virtual Router in MLAG configurations
         """
         if router:
+<<<<<<< HEAD
             router_name = self._arista_router_name(tenant_id, router['name'])
 
             rdm = str(int(hashlib.sha256(router_name).hexdigest(),
+=======
+            rdm = str(int(hashlib.sha256(router['name']).hexdigest(),
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
                     16) % 6553)
             for s in self._servers:
                 self.create_router_on_eos(router_name, rdm, s)
@@ -269,8 +280,12 @@ class AristaL3Driver(object):
 
         if router:
             for s in self._servers:
+<<<<<<< HEAD
                 self.delete_router_from_eos(self._arista_router_name(
                                                tenant_id, router['name']), s)
+=======
+                self.delete_router_from_eos(router['name'], s)
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
 
     def update_router(self, context, router_id, original_router, new_router):
         """Update A router which is already created on Arista Switch.
@@ -288,8 +303,12 @@ class AristaL3Driver(object):
             self._select_dicts(router_info['ip_version'])
             cidr = router_info['cidr']
             subnet_mask = cidr.split('/')[1]
+<<<<<<< HEAD
             router_name = self._arista_router_name(router_info['tenant_id'],
                                                    router_info['name'])
+=======
+            #virtualIp = ".".join(cidr.split( '/' ) [0 ].split('.')[ 0:3])
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
             if self.mlag_configured:
                 # For MLAG, we send a specific IP address as opposed to cidr
                 # For now, we are using x.x.x.253 and x.x.x.254 as virtual IP
@@ -305,7 +324,11 @@ class AristaL3Driver(object):
             else:
                 for s in self._servers:
                     self.add_interface_to_router(router_info['seg_id'],
+<<<<<<< HEAD
                                                  router_name,
+=======
+                                                 router_info['name'],
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
                                                  router_info['gip'],
                                                  None, subnet_mask, s)
 
@@ -347,12 +370,15 @@ class AristaL3Driver(object):
             LOG.exception(msg)
             raise arista_exc.AristaServicePluginRpcError(msg=msg)
 
+<<<<<<< HEAD
     def _arista_router_name(self, tenant_id, name):
         # Use a unique name so that OpenStack created routers/SVIs
         # can be distinguishged from the user created routers/SVIs
         # on Arista HW.
         return 'OS' + '-' + tenant_id +  '-' + name
 
+=======
+>>>>>>> 3787fddd15ac65ed5df2e7e57978e9713eda6944
     def _get_binary_from_ipv4(self, ip_addr):
         octets = ip_addr.split('.')
         num = 0
