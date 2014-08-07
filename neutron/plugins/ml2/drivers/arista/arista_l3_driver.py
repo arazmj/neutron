@@ -351,7 +351,7 @@ class AristaL3Driver(object):
         # Use a unique name so that OpenStack created routers/SVIs
         # can be distinguishged from the user created routers/SVIs
         # on Arista HW.
-        return 'OS' + '-' + tenant_id +  '-' + name
+        return 'OS' + '-' + tenant_id + '-' + name
 
     def _get_binary_from_ipv4(self, ip_addr):
         octets = ip_addr.split('.')
