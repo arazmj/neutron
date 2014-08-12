@@ -66,8 +66,7 @@ class AristaL3DriverTestCasesDefaultVrf(base.BaseTestCase):
         router_name = 'test-router-1'
 
         self.drv.delete_router_from_eos(router_name, self.drv._servers[0])
-        cmds = ['enable', 'configure', 'no ip routing',
-                'no ipv6 unicast-routing', 'exit']
+        cmds = ['enable', 'configure', 'exit']
 
         self.drv._servers[0].runCmds.assert_called_once_with(version=1,
                                                              cmds=cmds)
@@ -202,7 +201,7 @@ class AristaL3DriverTestCasesMlagConfig(base.BaseTestCase):
     def test_create_router_on_eos(self):
         router_name = 'test-router-1'
         route_domain = '123:123'
-        router_mac = '02:1c:73:00:42:e9'
+        router_mac = '00:11:22:33:44:55'
 
         for s in self.drv._servers:
             self.drv.create_router_on_eos(router_name, route_domain, s)
@@ -216,8 +215,7 @@ class AristaL3DriverTestCasesMlagConfig(base.BaseTestCase):
 
         for s in self.drv._servers:
             self.drv.delete_router_from_eos(router_name, s)
-            cmds = ['enable', 'configure', 'no ip routing',
-                    'no ipv6 unicast-routing',
+            cmds = ['enable', 'configure',
                     'no ip virtual-router mac-address', 'exit']
 
             s.runCmds.assert_called_once_with(version=1, cmds=cmds)

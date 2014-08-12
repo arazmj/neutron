@@ -92,7 +92,6 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _synchronization_thread(self):
         with self.sync_lock:
-            #self.sync_serv.synchronize()
             self.synchronize()
 
         self.timer = threading.Timer(self.sync_timeout,
@@ -108,7 +107,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """Create a new router entry in DB, and create it Arista HW"""
 
         LOG.debug(_("AristaL3ServicePlugin.create_router() called, "
-                    "router=%s ."), router)
+                    "router=%s "), router)
         tenant_id = self._get_tenant_id_for_create(context, router['router'])
 
         # Add router to the DB
@@ -150,9 +149,6 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         except Exception:
             LOG.error(_("Error updating router on Arista HW "
                         "router=%s ") % new_router)
-            #reset the router to original settings
-            #super(AristaL3ServicePlugin, self).update_router(context,
-            #                                      router_id, original_router)
 
     def delete_router(self, context, router_id):
         """Delete an existing from Arista HW as well as from the DB"""
@@ -308,25 +304,3 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         port_id_specified = interface_info and 'port_id' in interface_info
         subnet_id_specified = interface_info and 'subnet_id' in interface_info
         return port_id_specified, subnet_id_specified
-
-
-class SyncService(extraroute_db.ExtraRoute_db_mixin):
-    """Synchronizatin of information between Neutron and EOS
-
-    Periodically (through configuration option), this service
-    ensures that Networks and VMs configured on EOS/Arista HW
-    are always in sync with Neutron DB.
-    """
-
-    def __init__(self):
-        super(SyncService, self).__init__()
-        self.admin_ctx = nctx.get_admin_context()
-
-    #def synchronize(self):
-    #    """Sends data to EOS which differs from neutron DB."""
-
-    #    LOG.info(_('Syncing Neutron Router DB <-> EOS'))
-    #    routers= self.get_routers(self.admin_ctx)
-    #    print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-    #    print routers
-    #    print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

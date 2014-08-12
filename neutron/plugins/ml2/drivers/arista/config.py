@@ -68,13 +68,11 @@ ARISTA_DRIVER_OPTS = [
 ]
 
 
-""" Arista L3 Plugin specific configuration knobs.
+""" Arista L3 Service Plugin specific configuration knobs.
 
-Following are user configurable options for Arista ML2 Mechanism
+Following are user configurable options for Arista L3 plugin
 driver. The eapi_username, eapi_password, and eapi_host are
-required options. Region Name must be the same that is used by
-Keystone service. This option is available to support multiple
-OpenStack/Neutron controllers.
+required options.
 """
 
 ARISTA_L3_PLUGIN = [

@@ -25,14 +25,13 @@ from oslo.config import cfg
 from neutron import context as nctx
 from neutron.db import db_base_plugin_v2
 from neutron.openstack.common import log as logging
-#from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2.drivers.arista import exceptions as arista_exc
 
 LOG = logging.getLogger(__name__)
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 DEFAULT_TEST_VLAN = 1
-VIRTUAL_ROUTER_MAC = '02:1c:73:00:42:e9'
+VIRTUAL_ROUTER_MAC = '00:11:22:33:44:55'
 
 router_in_vrf = {
     'router': {'create': ['vrf definition {0}',
@@ -49,9 +48,8 @@ router_in_vrf = {
                   'remove': ['no interface vlan {0}']}}
 
 router_in_default_vrf = {
-    'router': {'create': [],
-               'delete': ['no ip routing',
-                          'no ipv6 unicast-routing']},
+    'router': {'create': [],   # Place holder for now.
+               'delete': []},  # Place holder for now.
 
     'interface': {'add': ['ip routing',
                           'vlan {0}',
@@ -62,8 +60,7 @@ router_in_default_vrf = {
 
 router_in_default_vrf_v6 = {
     'router': {'create': [],
-               'delete': ['no ip routing',
-                          'no ipv6 unicast-routing']},
+               'delete': []},
 
     'interface': {'add': ['ipv6 unicast-routing',
                           'vlan {0}',
@@ -99,11 +96,16 @@ class AristaL3Driver(object):
         self._servers = []
         self._hosts = []
         self.interfaceDict = None
-        self._servers.append(jsonrpclib.Server(self._eapi_host_url()))
+        self._validate_config()
+        host = cfg.CONF.l3_arista.primary_l3_host
+        self._hosts.append(host)
+        self._servers.append(jsonrpclib.Server(self._eapi_host_url(host)))
         self.mlag_configured = cfg.CONF.l3_arista.mlag_config
         self.use_vrf = cfg.CONF.l3_arista.use_vrf
         if self.mlag_configured:
-            self._servers.append(jsonrpclib.Server(self._eapi_mlag_host_url()))
+            host = cfg.CONF.l3_arista.secondary_l3_host
+            self._hosts.append(host)
+            self._servers.append(jsonrpclib.Server(self._eapi_host_url(host)))
             self._additionalRouterCmdsDict = additional_cmds_for_mlag['router']
             self._additionalInterfaceCmdsDict = (
                 additional_cmds_for_mlag['interface'])
@@ -114,29 +116,13 @@ class AristaL3Driver(object):
             self.routerDict = router_in_default_vrf['router']
             self.interfaceDict = router_in_default_vrf['interface']
 
-    def _eapi_host_url(self):
-        self._validate_config()
-
+    def _eapi_host_url(self, host):
         user = cfg.CONF.l3_arista.primary_l3_host_username
         pwd = cfg.CONF.l3_arista.primary_l3_host_password
-        host = cfg.CONF.l3_arista.primary_l3_host
-        self._hosts.append(host)
 
         eapi_server_url = ('https://%s:%s@%s/command-api' %
                            (user, pwd, host))
         return eapi_server_url
-
-    def _eapi_mlag_host_url(self):
-        if not self.mlag_configured:
-            return None
-        user = cfg.CONF.l3_arista.primary_l3_host_username
-        pwd = cfg.CONF.l3_arista.primary_l3_host_password
-        host = cfg.CONF.l3_arista.secondary_l3_host
-        self._hosts.append(host)
-
-        eapi_mlag_server_url = ('https://%s:%s@%s/command-api' %
-                                (user, pwd, host))
-        return eapi_mlag_server_url
 
     def _validate_config(self):
         if cfg.CONF.l3_arista.get('primary_l3_host') == '':
@@ -294,6 +280,7 @@ class AristaL3Driver(object):
                 # For MLAG, we send a specific IP address as opposed to cidr
                 # For now, we are using x.x.x.253 and x.x.x.254 as virtual IP
                 for i in range(len(self._servers)):
+                    #get appropriate virtual IP address for this router
                     router_ip = self._get_router_ip(cidr, i,
                                                     router_info['ip_version'])
                     self.add_interface_to_router(router_info['seg_id'],
@@ -340,10 +327,10 @@ class AristaL3Driver(object):
             ret = server.runCmds(version=1, cmds=full_command)
             LOG.info(_('Results of execution on Arista EOS: %s'), ret)
 
-        except Exception as error:
-            msg = (_('Error %(err)s while trying to execute '
+        except Exception:
+            msg = (_('Error occured while trying to execute '
                      'commands %(cmd)s on EOS %(host)s') %
-                   {'err': error, 'cmd': full_command, 'host': server})
+                   {'cmd': full_command, 'host': server})
             LOG.exception(msg)
             raise arista_exc.AristaServicePluginRpcError(msg=msg)
 
@@ -388,6 +375,17 @@ class AristaL3Driver(object):
         return ':'.join(reversed(octets))
 
     def _get_router_ip(self, cidr, ip_count, ip_ver):
+        """ For a given IP subnet and IP version type, generate IP for router.
+
+        This method takes the network address (cidr) and selects an
+        IP address that should be assigned to virtual router running
+        on multiple switches. It uses upper addresses in a subnet address
+        as IP for the router. Each instace of the router, on each switch,
+        requires uniqe IP address. For example in IPv4 case, on a 255
+        subnet, it will pick X.X.X.254 as first addess, X.X.X.253 for next,
+        and so on.
+        """
+
         start_ip = 2 + ip_count
         network_addr, prefix = cidr.split('/')
         if ip_ver == 4:
@@ -423,13 +421,6 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2):
 
     def __init__(self):
         self.admin_ctx = nctx.get_admin_context()
-
-    def get_network_name(self, tenant_id, network_id):
-        network = self._get_network(tenant_id, network_id)
-        network_name = None
-        if network:
-            network_name = network[0]['name']
-        return network_name
 
     def get_all_networks_for_tenant(self, tenant_id):
         filters = {'tenant_id': [tenant_id]}
