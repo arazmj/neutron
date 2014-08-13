@@ -182,8 +182,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         router_info = super(AristaL3ServicePlugin, self).add_router_interface(
             context, router_id, interface_info)
 
-        #Get network information for the subnet that is being added to the
-        #router.
+        #Get network info for the subnet that is being added to the router.
         #Check if the interface information is by port-id or subnet-id
         add_by_port, add_by_sub = self._validate_interface_info(interface_info)
         if add_by_sub:
@@ -212,9 +211,9 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.driver.add_router_interface(context, router_info)
             return router_info
         except Exception:
-            LOG.error(_("Error Adding interface %(subnet_id)s to "
+            LOG.error(_("Error Adding subnet %(subnet)s to "
                         "router %(router_id)s on Arista HW") %
-                      {'subnet_id': subnet_id, 'router_id': router_id})
+                      {'subnet': subnet, 'router_id': router_id})
             with excutils.save_and_reraise_exception():
                 super(AristaL3ServicePlugin, self).remove_router_interface(
                                                     context,

@@ -18,6 +18,8 @@
 #
 
 import hashlib
+import socket
+import struct
 
 import jsonrpclib
 from oslo.config import cfg
@@ -31,7 +33,10 @@ LOG = logging.getLogger(__name__)
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
 DEFAULT_TEST_VLAN = 1
+MLAG_SWITCHES = 2
 VIRTUAL_ROUTER_MAC = '00:11:22:33:44:55'
+IPV4_BITS = 32
+IPV6_BITS = 128
 
 router_in_vrf = {
     'router': {'create': ['vrf definition {0}',
@@ -341,38 +346,21 @@ class AristaL3Driver(object):
         return 'OS' + '-' + tenant_id + '-' + name
 
     def _get_binary_from_ipv4(self, ip_addr):
-        octets = ip_addr.split('.')
-        num = 0
-        for i in range(len(octets) - 1):
-            num = num | int(octets[i])
-            num = num << 8
-        return num
+        return struct.unpack("!L", socket.inet_pton(socket.AF_INET,
+                                                    ip_addr))[0]
 
     def _get_binary_from_ipv6(self, ip_addr):
-        octets = ip_addr.split(':')
-        num = 0
-        for i in range(len(octets) - 1):
-            if octets[i] != '':
-                num = num | int(octets[i], 16)
-                num = num << 16
-            else:
-                num = num << (7 - i) * 16
-                break
-        return num
+        hi, lo = struct.unpack("!QQ", socket.inet_pton(socket.AF_INET6,
+                                                       ip_addr))
+        return (hi << 64) | lo
 
     def _get_ipv4_from_binary(self, bin_addr):
-        octets = []
-        for i in range(4):
-            octets.append(str(bin_addr % 256))
-            bin_addr = bin_addr / 256
-        return '.'.join(reversed(octets))
+        return socket.inet_ntop(socket.AF_INET, struct.pack("!L", bin_addr))
 
     def _get_ipv6_from_binary(self, bin_addr):
-        octets = []
-        for i in range(8):
-            octets.append('%x' % (bin_addr % 65536))
-            bin_addr = bin_addr / 65536
-        return ':'.join(reversed(octets))
+        hi = bin_addr >> 64
+        lo = bin_addr & 0xFFFFFFFF
+        return socket.inet_ntop(socket.AF_INET, struct.pack("!QQ", hi, lo))
 
     def _get_router_ip(self, cidr, ip_count, ip_ver):
         """ For a given IP subnet and IP version type, generate IP for router.
@@ -385,22 +373,20 @@ class AristaL3Driver(object):
         subnet, it will pick X.X.X.254 as first addess, X.X.X.253 for next,
         and so on.
         """
-
-        start_ip = 2 + ip_count
+        start_ip = MLAG_SWITCHES + ip_count
         network_addr, prefix = cidr.split('/')
         if ip_ver == 4:
+            bits = IPV4_BITS
             ip = self._get_binary_from_ipv4(network_addr)
-            mask = (pow(2, 32) - 1) << (32 - int(prefix))
         elif ip_ver == 6:
+            bits = IPV6_BITS
             ip = self._get_binary_from_ipv6(network_addr)
-            mask = (pow(2, 128) - 1) << (128 - int(prefix))
+
+        mask = (pow(2, bits) - 1) << (bits - int(prefix))
 
         network_addr = ip & mask
 
-        if ip_ver == 4:
-            router_ip = pow(2, 32 - int(prefix)) - start_ip
-        elif ip_ver == 6:
-            router_ip = pow(2, 128 - int(prefix)) - start_ip
+        router_ip = pow(2, bits - int(prefix)) - start_ip
 
         router_ip = network_addr | router_ip
         if ip_ver == 4:
