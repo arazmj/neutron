@@ -65,7 +65,6 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         self.driver = driver or AristaL3Driver()
         self.ndb = NeutronNets()
-        #self.sync_serv = SyncService()
         self.setup_rpc()
         self.sync_timeout = cfg.CONF.l3_arista.l3_sync_interval
         self.sync_lock = threading.Lock()
@@ -179,7 +178,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     "id=%(id)s, interface=%(interface)s."),
                   {'id': router_id, 'interface': interface_info})
 
-        router_info = super(AristaL3ServicePlugin, self).add_router_interface(
+        new_router = super(AristaL3ServicePlugin, self).add_router_interface(
             context, router_id, interface_info)
 
         #Get network info for the subnet that is being added to the router.
@@ -201,6 +200,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         #Package all the info needed for Hw programming
         router = super(AristaL3ServicePlugin, self).get_router(context,
                                                                router_id)
+        router_info = new_router.copy()
         router_info['seg_id'] = seg_id
         router_info['name'] = router['name']
         router_info['cidr'] = subnet['cidr']
@@ -209,7 +209,7 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         try:
             self.driver.add_router_interface(context, router_info)
-            return router_info
+            return new_router
         except Exception:
             LOG.error(_("Error Adding subnet %(subnet)s to "
                         "router %(router_id)s on Arista HW") %
@@ -227,12 +227,12 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     "id=%(id)s, interface=%(interface)s."),
                   {'id': router_id, 'interface': interface_info})
 
-        router_info = (
+        new_router = (
                    super(AristaL3ServicePlugin, self).remove_router_interface(
                          context, router_id, interface_info))
 
         #get network information of the subnet that is being removed
-        subnet = self.get_subnet(context, router_info['subnet_id'])
+        subnet = self.get_subnet(context, new_router['subnet_id'])
         network_id = subnet['network_id']
 
         #For SVI removal from Arista HW, segmentation ID is needed
@@ -241,12 +241,13 @@ class AristaL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         router = super(AristaL3ServicePlugin, self).get_router(context,
                                                                router_id)
+        router_info = new_router.copy()
         router_info['seg_id'] = seg_id
         router_info['name'] = router['name']
 
         try:
             self.driver.remove_router_interface(context, router_info)
-            return router_info
+            return new_router
         except Exception as exc:
             LOG.error(_("Error removing interface %(interface)s from "
                         "router %(router_id)s on Arista HW"
