@@ -204,13 +204,13 @@ class AristaRPCWrapper(object):
         """Sends indication to EOS that ML2->EOS sync has started."""
 
         sync_start_cmd = ['sync start']
-        self._run_openstack_cmds(sync_start_cmd)
+        self._run_openstack_cmds(sync_start_cmd, timestamp=False)
 
     def sync_end(self):
         """Sends indication to EOS that ML2->EOS sync has completed."""
 
         sync_end_cmd = ['sync end']
-        self._run_openstack_cmds(sync_end_cmd)
+        self._run_openstack_cmds(sync_end_cmd, timestamp=False)
 
     def create_network(self, tenant_id, network):
         """Creates a single network on Arista hardware
@@ -373,18 +373,6 @@ class AristaRPCWrapper(object):
         cmds.append('exit')
         self._run_openstack_cmds(cmds)
 
-    def delete_this_region(self):
-        """Deleted the region data from EOS."""
-        cmds = ['enable',
-                'configure',
-                'cvx',
-                'service openstack',
-                'no region %s' % self.region,
-                'exit',
-                'exit',
-                'exit']
-        self._run_eos_cmds(cmds)
-
     def register_with_eos(self):
         """This is the registration request with EOS.
 
@@ -501,7 +489,8 @@ class AristaRPCWrapper(object):
         full_command.extend(self.cli_commands['timestamp'])
         return full_command
 
-    def _run_openstack_cmds(self, commands, commands_to_log=None):
+    def _run_openstack_cmds(self, commands, commands_to_log=None,
+                            timestamp=False):
         """Execute/sends a CAPI (Command API) command to EOS.
 
         In this method, list of commands is appended with prefix and
@@ -511,6 +500,8 @@ class AristaRPCWrapper(object):
         :param commands_to_logs : This should be set to the command that is
                                   logged. If it is None, then the commands
                                   param is logged.
+        :param timestamp : Controls whether the internal timestamp variable
+                           should be updated or not.
         """
 
         full_command = self._build_command(commands)
@@ -521,7 +512,7 @@ class AristaRPCWrapper(object):
         ret = self._run_eos_cmds(full_command, full_log_command)
         # Remove return values for 'configure terminal',
         # 'service openstack' and 'exit' commands
-        if self.cli_commands['timestamp']:
+        if timestamp and self.cli_commands['timestamp']:
             self._region_updated_time = ret[-1]
 
     def _eapi_host_url(self):
@@ -602,24 +593,6 @@ class SyncService(object):
             return
 
         db_tenants = db.get_tenants()
-
-        if not db_tenants and eos_tenants:
-            # No tenants configured in Neutron. Clear all EOS state
-            try:
-                self._rpc.delete_this_region()
-                msg = _('No Tenants configured in Neutron DB. But %d '
-                        'tenants discovered in EOS during synchronization.'
-                        'Entire EOS region is cleared') % len(eos_tenants)
-                LOG.info(msg)
-                # Re-register with EOS so that the timestamp is updated.
-                self._rpc.register_with_eos()
-                # Region has been completely cleaned. So there is nothing to
-                # synchronize
-                self._force_sync = False
-            except arista_exc.AristaRpcError:
-                LOG.warning(EOS_UNREACHABLE_MSG)
-                self._force_sync = True
-            return
 
         # Delete tenants that are in EOS, but not in the database
         tenants_to_delete = frozenset(eos_tenants.keys()).difference(
