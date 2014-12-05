@@ -550,6 +550,19 @@ class SyncService(object):
         self._force_sync = True
 
     def do_synchronize(self):
+
+        try:
+            # Get the time at which entities in the region were updated.
+            # If the times match, then ML2 is in sync with EOS. Otherwise
+            # perform a complete sync.
+            if not self._force_sync and self._rpc.region_in_sync():
+                LOG.info(_('OpenStack and EOS are in sync!'))
+                return
+        except arista_exc.AristaRpcError:
+            LOG.warning(EOS_UNREACHABLE_MSG)
+            self._force_sync = True
+            return
+
         try:
             # Send trigger to EOS that the ML2->EOS sync has started.
             self._rpc.sync_start()
@@ -571,17 +584,6 @@ class SyncService(object):
         """Sends data to EOS which differs from neutron DB."""
 
         LOG.info(_('Syncing Neutron <-> EOS'))
-        try:
-            # Get the time at which entities in the region were updated.
-            # If the times match, then ML2 is in sync with EOS. Otherwise
-            # perform a complete sync.
-            if not self._force_sync and self._rpc.region_in_sync():
-                LOG.info(_('OpenStack and EOS are in sync!'))
-                return
-        except arista_exc.AristaRpcError:
-            LOG.warning(EOS_UNREACHABLE_MSG)
-            self._force_sync = True
-            return
 
         try:
             #Always register with EOS to ensure that it has correct credentials
