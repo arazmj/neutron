@@ -569,6 +569,7 @@ class SyncService(object):
             LOG.info(_('Sync start trigger sent to EOS'))
         except arista_exc.AristaRpcError:
             LOG.warning(EOS_UNREACHABLE_MSG)
+            self._force_sync = True
             return
 
         # Perform the sync
