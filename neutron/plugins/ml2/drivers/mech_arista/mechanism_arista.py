@@ -225,6 +225,8 @@ class AristaRPCWrapper(object):
             # Enter segment mode without exiting out of network mode
             append_cmd('segment 1 type vlan id %d' %
                        network['segmentation_id'])
+            shared_cmd = 'shared' if network['shared'] else 'no shared'
+            append_cmd(shared_cmd)
         cmds.extend(self._get_exit_mode_cmds(['segment', 'network', 'tenant']))
         self._run_openstack_cmds(cmds)
 
@@ -566,6 +568,10 @@ class SyncService(object):
         # operations fail, then force_sync is set to true
         self._force_sync = False
 
+        # To support shared networks, split the sync loop in two parts:
+        # In first loop, delete unwanted VM and networks and update networks
+        # In second loop, update VMs. This is done to ensure that networks for
+        # all tenats are updated before VMs are updated
         vms_to_update = {}
         for tenant in db_tenants:
             db_nets = db.get_networks(tenant)
@@ -794,18 +800,21 @@ class AristaDriver(driver_api.MechanismDriver):
         """
         new_network = context.current
         orig_network = context.original
-        if new_network['name'] != orig_network['name']:
+        if ((new_network['name'] != orig_network['name']) or
+            (new_network['shared'] != orig_network['shared'])):
             network_id = new_network['id']
             network_name = new_network['name']
             tenant_id = new_network['tenant_id']
             vlan_id = new_network['provider:segmentation_id']
+            shared_net = new_network['shared']
             with self.eos_sync_lock:
                 if db.is_network_provisioned(tenant_id, network_id):
                     try:
                         network_dict = {
                             'network_id': network_id,
                             'segmentation_id': vlan_id,
-                            'network_name': network_name}
+                            'network_name': network_name,
+                            'shared': shared_net}
                         self.rpc.create_network(tenant_id, network_dict)
                     except arista_exc.AristaRpcError:
                         LOG.info(EOS_UNREACHABLE_MSG)
