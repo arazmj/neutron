@@ -763,13 +763,15 @@ class AristaDriver(driver_api.MechanismDriver):
         tenant_id = network['tenant_id']
         segments = context.network_segments
         vlan_id = segments[0]['segmentation_id']
+        shared_net = network['shared']
         with self.eos_sync_lock:
             if db.is_network_provisioned(tenant_id, network_id):
                 try:
                     network_dict = {
                         'network_id': network_id,
                         'segmentation_id': vlan_id,
-                        'network_name': network_name}
+                        'network_name': network_name,
+                        'shared': shared_net}
                     self.rpc.create_network(tenant_id, network_dict)
                 except arista_exc.AristaRpcError:
                     LOG.info(EOS_UNREACHABLE_MSG)
@@ -869,6 +871,7 @@ class AristaDriver(driver_api.MechanismDriver):
             network_id = port['network_id']
             tenant_id = port['tenant_id']
             with self.eos_sync_lock:
+                db.remember_tenant(tenant_id)
                 db.remember_vm(device_id, host, port_id,
                                network_id, tenant_id)
 
@@ -897,8 +900,10 @@ class AristaDriver(driver_api.MechanismDriver):
                                                       port_id,
                                                       network_id,
                                                       tenant_id)
-                net_provisioned = db.is_network_provisioned(tenant_id,
-                                                            network_id)
+                net_provisioned = (
+                    db.is_network_provisioned(tenant_id, network_id) or
+                    self.ndb.get_shared_network_owner_id(network_id)
+                )
                 if vm_provisioned and net_provisioned:
                     try:
                         self.rpc.plug_port_into_network(device_id,
@@ -961,9 +966,11 @@ class AristaDriver(driver_api.MechanismDriver):
                                                       port_id,
                                                       network_id,
                                                       tenant_id)
-                net_provisioned = db.is_network_provisioned(tenant_id,
-                                                            network_id,
-                                                            segmentation_id)
+                net_provisioned = (
+                    db.is_network_provisioned(tenant_id, network_id,
+                                              segmentation_id) or
+                    self.ndb.get_shared_network_owner_id(network_id)
+                )
                 if vm_provisioned and net_provisioned:
                     try:
                         self.rpc.plug_port_into_network(device_id,
